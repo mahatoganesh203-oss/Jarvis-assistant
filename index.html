@@ -1,0 +1,458 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S. v0.6</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:#050b16;
+  color:#00d9ff;
+  font-family:Arial,sans-serif;
+  text-align:center;
+  min-height:100vh;
+  padding:20px;
+}
+
+h1{
+  letter-spacing:7px;
+  text-shadow:0 0 15px #00d9ff;
+  margin-top:25px;
+}
+
+.core{
+  width:180px;
+  height:180px;
+  border:3px solid #00d9ff;
+  border-radius:50%;
+  margin:35px auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:25px;
+  box-shadow:0 0 20px #00d9ff,inset 0 0 20px #00d9ff;
+  animation:pulse 2s infinite;
+}
+
+@keyframes pulse{
+  50%{
+    box-shadow:0 0 40px #00d9ff,inset 0 0 35px #00d9ff;
+  }
+}
+
+.panel{
+  max-width:500px;
+  margin:auto;
+  padding:20px;
+  border:1px solid #087b9b;
+  border-radius:15px;
+  background:#081526;
+}
+
+#status{
+  color:#8cecff;
+  min-height:24px;
+  margin:12px;
+}
+
+#output{
+  color:white;
+  min-height:55px;
+  margin:15px 0;
+  line-height:1.5;
+}
+
+input,select{
+  width:100%;
+  padding:13px;
+  margin:7px 0;
+  border-radius:8px;
+  border:1px solid #00d9ff;
+  background:#06101e;
+  color:white;
+  font-size:16px;
+}
+
+button{
+  padding:12px;
+  margin:5px;
+  border:1px solid #00d9ff;
+  border-radius:8px;
+  background:#071c30;
+  color:#00d9ff;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+button:active{
+  background:#00d9ff;
+  color:#00101a;
+}
+
+.small{
+  font-size:12px;
+  color:#8caebd;
+}
+</style>
+</head>
+
+<body>
+
+<h1>J.A.R.V.I.S.</h1>
+<p class="small">PERSONAL INTELLIGENT ASSISTANT</p>
+
+<div class="core" id="core">J.A.R.V.I.S.</div>
+
+<div class="panel">
+
+  <div id="status">INITIALIZING SYSTEM...</div>
+
+  <div id="output">
+    Good day. I am ready for your command.
+  </div>
+
+  <input id="command" placeholder="Enter your command...">
+
+  <button onclick="sendCommand()">SEND COMMAND</button>
+
+  <select id="language">
+    <option value="auto">Automatic response language</option>
+    <option value="en-IN">English voice input</option>
+    <option value="hi-IN">Hindi voice input</option>
+  </select>
+
+  <button onclick="startListening()">LISTEN</button>
+  <button onclick="stopListening()">STOP LISTENING</button>
+  <button onclick="testVoice()">TEST VOICE</button>
+  <button onclick="stopSpeech()">STOP SPEECH</button>
+  <button onclick="clearScreen()">CLEAR</button>
+
+  <p class="small">
+    Offline commands available. Online AI is not configured.
+  </p>
+
+</div>
+
+<script>
+const statusBox=document.getElementById("status");
+const outputBox=document.getElementById("output");
+const commandInput=document.getElementById("command");
+const languageSelect=document.getElementById("language");
+
+let recognition=null;
+let listening=false;
+let selectedVoice=null;
+
+function setStatus(message){
+  statusBox.textContent=message;
+}
+
+function showOutput(message){
+  outputBox.textContent=message;
+}
+
+function chooseVoice(){
+  const voices=speechSynthesis.getVoices();
+
+  selectedVoice=
+    voices.find(v=>/en-IN/i.test(v.lang)&&
+    /male|david|daniel|mark/i.test(v.name)) ||
+    voices.find(v=>/en-IN/i.test(v.lang)) ||
+    voices.find(v=>/en-US/i.test(v.lang)) ||
+    voices[0] || null;
+}
+
+if("speechSynthesis" in window){
+  chooseVoice();
+  speechSynthesis.onvoiceschanged=chooseVoice;
+}
+
+function speak(message,language){
+  if(!("speechSynthesis" in window)){
+    showOutput(message);
+    return;
+  }
+
+  speechSynthesis.cancel();
+
+  const utterance=new SpeechSynthesisUtterance(message);
+
+  utterance.lang=language==="hi"?"hi-IN":"en-IN";
+  utterance.rate=0.92;
+  utterance.pitch=0.85;
+  utterance.volume=1;
+
+  chooseVoice();
+
+  if(selectedVoice && language!=="hi"){
+    utterance.voice=selectedVoice;
+  }
+
+  utterance.onstart=()=>setStatus("JARVIS SPEAKING...");
+  utterance.onend=()=>setStatus("SYSTEM READY");
+
+  speechSynthesis.speak(utterance);
+}
+
+function detectLanguage(text){
+  return /[\u0900-\u097F]/.test(text)?"hi":"en";
+}
+
+function reply(message,language){
+  showOutput(message);
+  speak(message,language);
+}
+
+function calculate(expression){
+  const cleaned=expression
+    .replace(/plus/gi,"+")
+    .replace(/minus/gi,"-")
+    .replace(/times|multiplied by/gi,"*")
+    .replace(/divided by/gi,"/")
+    .replace(/x/gi,"*");
+
+  if(!/^[0-9+\-*/().\s]+$/.test(cleaned)) return null;
+
+  try{
+    const result=Function('"use strict";return ('+cleaned+')')();
+
+    if(typeof result==="number"&&Number.isFinite(result)){
+      return result;
+    }
+  }catch(e){}
+
+  return null;
+}
+
+function processCommand(raw){
+  const text=raw.trim();
+  const lower=text.toLowerCase();
+  const lang=detectLanguage(text);
+
+  if(!text)return;
+
+  if(/^(hi|hello|hey|good morning|good evening)\b/i.test(lower)){
+    reply(
+      lang==="hi"?
+      "नमस्ते। मैं आपकी सहायता के लिए तैयार हूँ।":
+      "Hello. JARVIS systems are ready.",
+      lang
+    );
+    return;
+  }
+
+  if(lower.includes("time")||lower.includes("समय")){
+    const now=new Date().toLocaleTimeString();
+
+    reply(
+      lang==="hi"?"अभी समय है "+now:
+      "The current time is "+now,
+      lang
+    );
+    return;
+  }
+
+  if(lower.includes("date")||lower.includes("तारीख")){
+    const today=new Date().toLocaleDateString();
+
+    reply(
+      lang==="hi"?"आज की तारीख है "+today:
+      "Today's date is "+today,
+      lang
+    );
+    return;
+  }
+
+  if(lower.includes("who are you")||lower.includes("your name")){
+    reply("I am JARVIS, your personal assistant.",lang);
+    return;
+  }
+
+  if(lower.includes("status")||lower.includes("system status")){
+    reply(
+      "All local systems are operational. Online artificial intelligence is not connected yet.",
+      lang
+    );
+    return;
+  }
+
+  if(lower.includes("help")||lower.includes("commands")){
+    reply(
+      "You can ask me the time, date, my name, or a simple calculation.",
+      lang
+    );
+    return;
+  }
+
+  if(lower.includes("stop speaking")||lower.includes("चुप")){
+    stopSpeech();
+    setStatus("SPEECH STOPPED");
+    return;
+  }
+
+  const mathText=lower
+    .replace(/what is|calculate|solve|kitna hota hai/gi,"")
+    .replace(/[?=]/g,"")
+    .trim();
+
+  const answer=calculate(mathText);
+
+  if(answer!==null){
+    reply("The answer is "+answer,lang);
+    return;
+  }
+
+  if(lang==="hi"){
+    reply(
+      "माफ़ कीजिए, यह कमांड अभी मेरी ऑफलाइन कमांड सूची में नहीं है।",
+      "hi"
+    );
+  }else{
+    reply(
+      "Sorry. This command is not available in my offline command system yet.",
+      "en"
+    );
+  }
+}
+
+function sendCommand(){
+  const text=commandInput.value;
+  if(!text.trim())return;
+
+  processCommand(text);
+  commandInput.value="";
+}
+
+commandInput.addEventListener("keydown",function(event){
+  if(event.key==="Enter")sendCommand();
+});
+
+function setupRecognition(){
+  const SpeechRecognition=
+    window.SpeechRecognition||
+    window.webkitSpeechRecognition;
+
+  if(!SpeechRecognition){
+    setStatus("ERROR: SPEECH RECOGNITION NOT SUPPORTED");
+    showOutput("Try an updated version of Chrome.");
+    return false;
+  }
+
+  recognition=new SpeechRecognition();
+  recognition.continuous=false;
+  recognition.interimResults=false;
+  recognition.maxAlternatives=1;
+
+  recognition.onstart=function(){
+    listening=true;
+    setStatus("LISTENING... SPEAK NOW");
+  };
+
+  recognition.onresult=function(event){
+    const transcript=event.results[0][0].transcript;
+    commandInput.value=transcript;
+    setStatus("COMMAND RECEIVED");
+    processCommand(transcript);
+  };
+
+  recognition.onerror=function(event){
+    listening=false;
+    setStatus("MIC ERROR: "+event.error);
+
+    showOutput(
+      "Speech recognition error: "+event.error+
+      ". Check microphone permission and try again."
+    );
+  };
+
+  recognition.onend=function(){
+    listening=false;
+
+    if(!statusBox.textContent.startsWith("MIC ERROR")){
+      setStatus("SYSTEM READY");
+    }
+  };
+
+  return true;
+}
+
+function startListening(){
+  if(listening){
+    setStatus("ALREADY LISTENING");
+    return;
+  }
+
+  if(!recognition&&!setupRecognition())return;
+
+  try{
+    recognition.lang=languageSelect.value==="auto"?
+      "en-IN":languageSelect.value;
+
+    setStatus("STARTING MICROPHONE...");
+
+    recognition.start();
+
+  }catch(error){
+    setStatus("START ERROR: "+error.name);
+    showOutput(error.message||"Could not start speech recognition.");
+  }
+}
+
+function stopListening(){
+  if(recognition&&listening){
+    recognition.stop();
+  }
+
+  listening=false;
+  setStatus("LISTENING STOPPED");
+}
+
+function stopSpeech(){
+  if("speechSynthesis" in window){
+    speechSynthesis.cancel();
+  }
+}
+
+function testVoice(){
+  reply("Hello. I am JARVIS. Voice system is ready.","en");
+}
+
+function clearScreen(){
+  commandInput.value="";
+  showOutput("Screen cleared. Awaiting command.");
+  setStatus("SYSTEM READY");
+  stopSpeech();
+}
+
+function checkBackend(){
+  if(typeof google!=="undefined"&&
+     google.script&&google.script.run){
+
+    google.script.run
+      .withSuccessHandler(function(result){
+        setStatus("BACKEND CONNECTED | JARVIS v0.6");
+      })
+      .withFailureHandler(function(error){
+        setStatus("OFFLINE MODE | BACKEND UNAVAILABLE");
+      })
+      .checkConnection();
+
+  }else{
+    setStatus("OFFLINE MODE | BACKEND NOT DETECTED");
+  }
+}
+
+window.addEventListener("load",function(){
+  setStatus("SYSTEM READY");
+  checkBackend();
+});
+</script>
+
+</body>
+  </html>
+  
